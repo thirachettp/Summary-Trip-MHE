@@ -61,7 +61,6 @@ def sync_google_drive():
         use_cookies=False
     )
 
-
 # =========================
 # LOAD DATA
 # =========================
@@ -90,14 +89,13 @@ def load_data():
 st.set_page_config(
     page_title="Summary Trip MHE",
     page_icon="🚚",
-    layout="wide"
+    layout="centered"
 )
-
 
 raw = load_data()
 raw_df = raw.copy()
 
-raw_df = raw_df[['NO.', 'Trip No.', 'ID Truck', 'Store Code', 'Store  Name']]
+raw_df = raw_df[['NO.', 'Trip No.', 'ID Truck', 'Store Code', 'Store  Name','Trip No..1']]
 raw_df = raw_df[raw_df['Store Code'].notna()]
 
 raw_df['Trip No.'] = raw_df['Trip No.'].ffill()
@@ -110,8 +108,13 @@ raw_df['Store Code'] = (
     .astype(str)
 )
 
-raw_df = raw_df.drop_duplicates()
+raw_df['Trip No..1'] = (
+    raw_df['Trip No..1']
+    .ffill()
+    .astype(str)
+)
 
+raw_df = raw_df.drop_duplicates()
 
 # =========================
 # LOOKUP MAP
@@ -120,61 +123,82 @@ raw_df = raw_df.drop_duplicates()
 code_to_name = dict(zip(raw_df['Store Code'], raw_df['Store  Name']))
 name_to_code = dict(zip(raw_df['Store  Name'], raw_df['Store Code']))
 
-
 # =========================
 # UI
 # =========================
 
 st.title("Summary Trip MHE")
 
-trip_no = st.selectbox(
-    "เลือก Trip No.",
-    sorted(raw_df['Trip No.'].unique())
+trip_options = [""] + sorted(set(raw_df['Trip No..1'].dropna().astype(str)))
+
+document_no = st.selectbox(
+    "Document_no",
+    trip_options,
+    index=0,
+    key="trip_select"
 )
-
-trip_df = raw_df[raw_df['Trip No.'] == trip_no]
-
-st.write(f"Trip No : {trip_no}")
-
-timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 results = []
 
-st.write(f"ID Truck : {trip_df['ID Truck'].iloc[0]}")
+if document_no != "":
 
+    trip_df = raw_df[(raw_df['Trip No..1'] == document_no)]
 
-# =========================
-# EXISTING STORES
-# =========================
+    c1, c2, c3 = st.columns(3)
 
-for idx, row in trip_df.iterrows():
+    c1.metric("Trip", trip_df['Trip No.'].iloc[0])
+    c2.metric("Load", trip_df['Trip No..1'].iloc[0])
+    c3.metric("Truck", trip_df['ID Truck'].iloc[0])
 
-    st.markdown("---")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    st.write(f"🏪 {row['Store Code']} - {row['Store  Name']}")
+    # =========================
+    # EXISTING STORES
+    # =========================
 
-    col1, col2, col3, col4 = st.columns(4)
+    for idx, row in trip_df.iterrows():
 
-    with col1:
-        pallet = st.number_input("Pallet", 0, key=f"p_{idx}")
-    with col2:
-        tote = st.number_input("Toteboxes", 0, key=f"t_{idx}")
-    with col3:
-        roll = st.number_input("Rollcage", 0, key=f"r_{idx}")
-    with col4:
-        boxes = st.number_input("Boxes", 0, key=f"b_{idx}")
+        st.markdown("""
+            <style>
+            div.stButton > button {
+                width: 100%;
+                height: 60px;
+                font-size: 22px;
+                border-radius: 12px;
+            }
+            div[data-baseweb="select"] {
+                font-size: 20px;
+            }
+            input {
+                font-size: 22px !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
 
-    results.append({
-        "Timestamp_Edited": timestamp,
-        "Trip No.": trip_no,
-        "Store Code": row["Store Code"],
-        "Store Name": row["Store  Name"],
-        "Pallet": pallet,
-        "Toteboxes": tote,
-        "Rollcage": roll,
-        "Boxes": boxes
-    })
+        with st.expander(
+                f"🏪 {row['Store Code']} - {row['Store  Name']}",expanded=True):
 
+            col1, col2 = st.columns(2)
+            with col1:
+                pallet = st.number_input("Pallet", 0, key=f"p_{idx}")
+            with col2:
+                tote = st.number_input("Toteboxes", 0, key=f"t_{idx}")
+
+            col3, col4 = st.columns(2)
+            with col3:
+                roll = st.number_input("Rollcage", 0, key=f"r_{idx}")
+            with col4:
+                boxes = st.number_input("Boxes", 0, key=f"b_{idx}")
+
+        results.append({
+            "Timestamp_Edited": timestamp,
+            "Document No.": document_no,
+            "Store Code": row["Store Code"],
+            "Store Name": row["Store  Name"],
+            "Pallet": pallet,
+            "Toteboxes": tote,
+            "Rollcage": roll,
+            "Boxes": boxes
+        })
 
 # =========================
 # EXTRA STORES
@@ -255,6 +279,22 @@ if st.button("➕ Add Store"):
 # =========================
 # SAVE
 # =========================
+
+st.markdown("""
+<style>
+.sticky {
+    position: fixed;
+    bottom: 10px;
+    left: 0;
+    right: 0;
+    padding: 10px;
+    background: white;
+    z-index: 999;
+}
+</style>
+""", unsafe_allow_html=True)
+st.markdown('<div class="sticky">', unsafe_allow_html=True)
+
 if st.button("✅ Save"):
 
     # =========================
@@ -269,14 +309,15 @@ if st.button("✅ Save"):
         if s["Store Code"] or s["Store Name"]:
             final_results.append({
                 "Timestamp_Edited": timestamp,
-                "Trip No.": trip_no,
+                "Document No.": document_no,
                 "Store Code": s["Store Code"],
                 "Store Name": s["Store Name"],
                 "Pallet": s.get("Pallet", 0),
                 "Toteboxes": s.get("Toteboxes", 0),
                 "Rollcage": s.get("Rollcage", 0),
                 "Boxes": s.get("Boxes", 0)
-            })
+            }) #Pallet,Tote Box
+
 
     # =========================
     # 3. send API
@@ -291,12 +332,17 @@ if st.button("✅ Save"):
     if response.status_code == 200:
         st.session_state.saved_success = True
         st.session_state.reset_form = True
+
+        if "trip_select" in st.session_state:
+            del st.session_state["trip_select"]
+
         st.rerun()
 
     else:
         st.session_state.saved_success = False
         st.rerun()
 
+st.markdown('</div>', unsafe_allow_html=True)
 # =========================
 # MESSAGE
 # =========================
